@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ai_table_product_list {
+  ai_table_identifier String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  row_number          String?
+  product_id          String?
+  date_sold           DateTime? @db.Timestamp(6)
+  product_name        String?
+  category            String?
+  actual_price_inr    String?
+  rating              String?
+  about_product       String?
+  user_id             String?
+  user_name_usd       String?
+  review_id           String?
+  review_title        String?
+  review_content      String?
+  product_link        String?
+}
