@@ -1,0 +1,385 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Helper function to check if a string is in MM/DD/YYYY format\nfunction isDateString(value) {\n  const dateRegex = /^\\d{2}\\/\\d{2}\\/\\d{4}$/;\n  if (typeof value !== 'string') return false;\n  if (!dateRegex.test(value)) return false;\n  const [month, day, year] = value.split('/').map(Number);\n  const date = new Date(year, month - 1, day);\n  return !isNaN(date.getTime());\n}\n\nconst tableName = `ai_table_${$('change_this').first().json.sheet_name}`;\nconst rows = $('fetch sheet data').all();\nconst allColumns = new Set();\n\n// Collect column names dynamically\nrows.forEach(row => {\n  Object.keys(row.json).forEach(col => allColumns.add(col));\n});\n\n// Ensure \"ai_table_identifier\" is always the first column\nconst originalColumns = [\"ai_table_identifier\", ...Array.from(allColumns)];\n\n// Function to detect currency type (unchanged)\nfunction detectCurrency(values) {\n  const currencySymbols = {\n    '₹': 'INR', '$': 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY',\n    '₩': 'KRW', '฿': 'THB', 'zł': 'PLN', 'kr': 'SEK', 'R$': 'BRL',\n    'C$': 'CAD', 'A$': 'AUD'\n  };\n\n  let detectedCurrency = null;\n  for (const value of values) {\n    if (typeof value === 'string' && value.trim() !== '') {\n      for (const [symbol, code] of Object.entries(currencySymbols)) {\n        if (value.trim().startsWith(symbol)) {\n          detectedCurrency = code;\n          break;\n        }\n      }\n    }\n  }\n  return detectedCurrency;\n}\n\n// Function to generate consistent column names\nfunction generateColumnName(originalName, typeInfo) {\n  if (typeInfo.isCurrency) {\n    return `${originalName}_${typeInfo.currencyCode.toLowerCase()}`;\n  }\n  return originalName;\n}\n\n// Infer column types and transform names\nconst columnMapping = {};\noriginalColumns.forEach(col => {\n  let typeInfo = { type: \"TEXT\" };\n\n  if (col !== \"ai_table_identifier\") {\n    const sampleValues = rows\n      .map(row => row.json[col])\n      .filter(value => value !== undefined && value !== null);\n\n    // Check for currency first\n    const currencyCode = detectCurrency(sampleValues);\n    if (currencyCode) {\n      typeInfo = { type: \"DECIMAL(15,2)\", isCurrency: true, currencyCode };\n    }\n    // If all sample values match MM/DD/YYYY, treat the column as a date\n    else if (sampleValues.length > 0 && sampleValues.every(val => isDateString(val))) {\n      typeInfo = { type: \"TIMESTAMP\" };\n    }\n  }\n\n  const newColumnName = generateColumnName(col, typeInfo);\n  columnMapping[col] = { newName: newColumnName, typeInfo };\n});\n\n// Final column names\nconst mappedColumns = originalColumns.map(col => columnMapping[col]?.newName || col);\n\n// Define SQL columns – note that for simplicity, this example still uses TEXT for non-special types,\n// but you can adjust it so that TIMESTAMP columns are created with a TIMESTAMP type.\nconst columnDefinitions = [`\"ai_table_identifier\" UUID PRIMARY KEY DEFAULT gen_random_uuid()`]\n  .concat(mappedColumns.slice(1).map(col => {\n    // If the column was inferred as TIMESTAMP, use that type in the CREATE TABLE statement.\n    const originalCol = Object.keys(columnMapping).find(key => columnMapping[key].newName === col);\n    const inferredType = columnMapping[originalCol]?.typeInfo?.type;\n    return `\"${col}\" ${inferredType === \"TIMESTAMP\" ? \"TIMESTAMP\" : \"TEXT\"}`;\n  }))\n  .join(\", \");\n\nconst createTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (${columnDefinitions});`;\n\nreturn [{ \n  query: createTableQuery,\n  columnMapping: columnMapping \n}];\n"
+      },
+      "id": "ad5787f6-0ef3-4c1c-af53-23715016dfe3",
+      "name": "create table query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const tableName = `ai_table_${$('change_this').first().json.sheet_name}`;\nconst rows = $('fetch sheet data').all();\nconst allColumns = new Set();\n\n// Get column mapping from previous node\nconst columnMapping = $('create table query').first().json.columnMapping || {};\n\n// Collect column names dynamically\nrows.forEach(row => {\n  Object.keys(row.json).forEach(col => allColumns.add(col));\n});\n\nconst originalColumns = Array.from(allColumns);\nconst mappedColumns = originalColumns.map(col => \n  columnMapping[col] ? columnMapping[col].newName : col\n);\n\n// Helper function to check if a string is a valid timestamp\nfunction isValidTimestamp(value) {\n  const date = new Date(value);\n  return !isNaN(date.getTime());\n}\n\n// Helper to detect currency symbol (unchanged)\nfunction getCurrencySymbol(value) {\n  if (typeof value !== 'string') return null;\n  \n  const currencySymbols = ['₹', '$', '€', '£', '¥', '₩', '฿', 'zł', 'kr', 'R$', 'C$', 'A$'];\n  for (const symbol of currencySymbols) {\n    if (value.trim().startsWith(symbol)) {\n      return symbol;\n    }\n  }\n  return null;\n}\n\n// Helper to normalize currency values (unchanged)\nfunction normalizeCurrencyValue(value, currencySymbol) {\n  if (typeof value !== 'string') return null;\n  if (!currencySymbol) return value;\n  \n  const numericPart = value.replace(currencySymbol, '').replace(/,/g, '');\n  return !isNaN(parseFloat(numericPart)) ? parseFloat(numericPart) : null;\n}\n\n// Helper to normalize percentage values (unchanged)\nfunction normalizePercentageValue(value) {\n  if (typeof value !== 'string') return value;\n  if (!value.trim().endsWith('%')) return value;\n  \n  const numericPart = value.replace('%', '');\n  return !isNaN(parseFloat(numericPart)) ? parseFloat(numericPart) / 100 : null;\n}\n\n// Function to parse MM/DD/YYYY strings into ISO format\nfunction parseDateString(value) {\n  const dateRegex = /^\\d{2}\\/\\d{2}\\/\\d{4}$/;\n  if (typeof value === 'string' && dateRegex.test(value)) {\n    const [month, day, year] = value.split('/').map(Number);\n    const date = new Date(year, month - 1, day);\n    return !isNaN(date.getTime()) ? date.toISOString() : null;\n  }\n  return value;\n}\n\n// Format rows properly based on column mappings and types\nconst formattedRows = rows.map(row => {\n  const formattedRow = {};\n\n  originalColumns.forEach((col, index) => {\n    const mappedCol = mappedColumns[index];\n    let value = row.json[col];\n    const typeInfo = columnMapping[col]?.typeInfo || { type: \"TEXT\" };\n\n    if (value === \"\" || value === null || value === undefined) {\n      value = null;\n    } \n    else if (typeInfo.isCurrency) {\n      const symbol = getCurrencySymbol(value);\n      if (symbol) {\n        value = normalizeCurrencyValue(value, symbol);\n      } else {\n        value = null;\n      }\n    }\n    else if (typeInfo.isPercentage) {\n      if (typeof value === 'string' && value.trim().endsWith('%')) {\n        value = normalizePercentageValue(value);\n      } else {\n        value = !isNaN(parseFloat(value)) ? parseFloat(value) / 100 : null;\n      }\n    }\n    else if (typeInfo.type === \"DECIMAL(15,2)\" || typeInfo.type === \"INTEGER\") {\n      if (typeof value === 'string') {\n        const cleanedValue = value.replace(/,/g, '');\n        value = !isNaN(parseFloat(cleanedValue)) ? parseFloat(cleanedValue) : null;\n      } else if (typeof value === 'number') {\n        value = parseFloat(value);\n      } else {\n        value = null;\n      }\n    } \n    else if (typeInfo.type === \"BOOLEAN\") {\n      if (typeof value === 'string') {\n        const lowercased = value.toString().toLowerCase();\n        value = lowercased === \"true\" ? true : \n                lowercased === \"false\" ? false : null;\n      } else {\n        value = Boolean(value);\n      }\n    } \n    else if (typeInfo.type === \"TIMESTAMP\") {\n      // Check if the value is in MM/DD/YYYY format and parse it accordingly.\n      if (/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(value)) {\n        value = parseDateString(value);\n      } else if (isValidTimestamp(value)) {\n        value = new Date(value).toISOString();\n      } else {\n        value = null;\n      }\n    }\n    else if (typeInfo.type === \"TEXT\") {\n      value = value !== null && value !== undefined ? String(value) : null;\n    }\n\n    formattedRow[mappedCol] = value;\n  });\n\n  return formattedRow;\n});\n\n// Generate SQL placeholders dynamically\nconst valuePlaceholders = formattedRows.map((_, rowIndex) =>\n  `(${mappedColumns.map((_, colIndex) => `$${rowIndex * mappedColumns.length + colIndex + 1}`).join(\", \")})`\n).join(\", \");\n\n// Build the insert query string\nconst insertQuery = `INSERT INTO ${tableName} (${mappedColumns.map(col => `\"${col}\"`).join(\", \")}) VALUES ${valuePlaceholders};`;\n\n// Flatten parameter values for PostgreSQL query\nconst parameters = formattedRows.flatMap(row => mappedColumns.map(col => row[col]));\n\nreturn [\n  {\n    query: insertQuery,\n    parameters: parameters\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        608
+      ],
+      "id": "c5dfb302-aa6d-4dd7-9765-ae9d8f055413",
+      "name": "create insertion query"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {}
+          ]
+        },
+        "triggerOn": "specificFile",
+        "fileToWatch": {
+          "__rl": true,
+          "value": "1yGx4ODHYYtPV1WZFAtPcyxGT2brcXM6pl0KJhIM1f_c",
+          "mode": "list",
+          "cachedResultName": "Spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1yGx4ODHYYtPV1WZFAtPcyxGT2brcXM6pl0KJhIM1f_c/edit?usp=drivesdk"
+        }
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        304
+      ],
+      "id": "54c2a7c1-55fc-439d-b61c-a88440bca14a",
+      "name": "Google Drive Trigger",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "dS5tyFd5IJI7msQy",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "908ed843-f848-4290-9cdb-f195d2189d7c",
+              "name": "table_url",
+              "value": "https://docs.google.com/spreadsheets/d/1HjJHdbh7QHOPxs0hQ_rStEX5O7PpZmIhqm2kWE2Y6vM/edit?usp=sharing",
+              "type": "string"
+            },
+            {
+              "id": "50f8afaf-0a6c-43ee-9157-79408fe3617a",
+              "name": "sheet_name",
+              "value": "product_list",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        304
+      ],
+      "id": "25538bda-cee8-4e03-be1a-df3127502839",
+      "name": "change_this"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "619ce84c-0a50-4f88-8e55-0ce529aea1fc",
+              "leftValue": "={{ $('table exists?').item.json.exists }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        784,
+        304
+      ],
+      "id": "5f0308fb-2685-489a-b3f4-eb0f60d49691",
+      "name": "is not in database"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT EXISTS (\n    SELECT 1 \n    FROM information_schema.tables \n    WHERE table_name = 'ai_table_{{ $json.sheet_name }}'\n);\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        400,
+        304
+      ],
+      "id": "6eec89d0-f269-4e0a-90b7-9869601069a6",
+      "name": "table exists?",
+      "credentials": {
+        "postgres": {
+          "id": "GNul1SrMyqoXAdjG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1HjJHdbh7QHOPxs0hQ_rStEX5O7PpZmIhqm2kWE2Y6vM",
+          "mode": "list",
+          "cachedResultName": "Spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1HjJHdbh7QHOPxs0hQ_rStEX5O7PpZmIhqm2kWE2Y6vM/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1HjJHdbh7QHOPxs0hQ_rStEX5O7PpZmIhqm2kWE2Y6vM/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        592,
+        304
+      ],
+      "id": "1adc39bf-50fb-4162-bd3b-4122a394dd21",
+      "name": "fetch sheet data",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "KEHRvT8kZvGcctSs",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DROP TABLE IF EXISTS ai_table_{{ $('change_this').item.json.sheet_name }} CASCADE;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        384,
+        608
+      ],
+      "id": "24f3dae0-1688-4110-b200-9e34c981ef3a",
+      "name": "remove table",
+      "credentials": {
+        "postgres": {
+          "id": "GNul1SrMyqoXAdjG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.query }}",
+        "options": {}
+      },
+      "id": "1955b288-9353-4e9c-b486-741c1a0435f4",
+      "name": "create table",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        864,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GNul1SrMyqoXAdjG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{$json.query}}",
+        "options": {
+          "queryReplacement": "={{$json.parameters}}"
+        }
+      },
+      "id": "4dd447c3-0739-43eb-ae86-369deca8a074",
+      "name": "perform insertion",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1264,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "GNul1SrMyqoXAdjG",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM ai_table_product_list;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "7f621b9b-3c05-4d31-83a6-46f38681b2f2",
+      "name": "Postgres",
+      "credentials": {
+        "postgres": {
+          "id": "GNul1SrMyqoXAdjG",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "create table query": {
+      "main": [
+        [
+          {
+            "node": "create table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create insertion query": {
+      "main": [
+        [
+          {
+            "node": "perform insertion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "change_this",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "change_this": {
+      "main": [
+        [
+          {
+            "node": "table exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "is not in database": {
+      "main": [
+        [
+          {
+            "node": "create table query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "remove table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "table exists?": {
+      "main": [
+        [
+          {
+            "node": "fetch sheet data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "fetch sheet data": {
+      "main": [
+        [
+          {
+            "node": "is not in database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "remove table": {
+      "main": [
+        [
+          {
+            "node": "create table query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create table": {
+      "main": [
+        [
+          {
+            "node": "create insertion query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "73bd0923-b998-4192-b350-7cdb1787bac6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b8ca39abae5f578711d98f4f42fcb418d062e8ebb0ea38d72fb42fbaf392aff6"
+  },
+  "id": "tQitfx6iDNaPtl1t",
+  "tags": []
+}
