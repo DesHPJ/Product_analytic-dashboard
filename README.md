@@ -1,4 +1,4 @@
-Sales Insights Dashboard Automation
+#Sales Insights Dashboard Automation
 
 Full-stack project that automates the transformation of spreadsheets into interactive sales dashboards using n8n, PostgreSQL, Redis, Next.js, Prisma, and TypeScript.
 
