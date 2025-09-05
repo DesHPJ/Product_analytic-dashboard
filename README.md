@@ -1,10 +1,10 @@
-#Sales Insights Dashboard Automation
+# Sales Insights Dashboard Automation
 
 Full-stack project that automates the transformation of spreadsheets into interactive sales dashboards using n8n, PostgreSQL, Redis, Next.js, Prisma, and TypeScript.
 
 This project demonstrates end-to-end skills in automation, data engineering, and modern frontend development. It’s built to showcase how raw business data can be turned into usable insights with scalable architecture and clean UI.
 
-💡 What This Project Demonstrates
+## 💡 What This Project Demonstrates
 
 Automation Engineering → Used n8n to design a workflow that ingests spreadsheets and pipes structured data into a database.
 
