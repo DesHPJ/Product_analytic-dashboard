@@ -14,7 +14,7 @@ Frontend Development → Built an interactive Next.js dashboard with TypeScript 
 
 System Design → Combined multiple services into a local stack, showing how automation, storage, and UI can integrate seamlessly.
 
-🛠️ Tech Stack
+## 🛠️ Tech Stack
 
 Automation: n8n
 
@@ -26,10 +26,15 @@ Frontend: Next.js, TypeScript, Shadcn UI
 
 Hosting: Local environment (Docker/Manual setup)
 
-📊 Project Workflow
+## 📊 Project Workflow
 
 Upload Spreadsheet → n8n parses CSV/Excel files.
 
 Data Processing → Records stored in Postgres, cached in Redis.
 
 Dashboard Visualization → Next.js frontend fetches data via Prisma and renders interactive sales dashboards.
+
+## Clone repo
+git clone https://github.com/yourusername/sales-insights-dashboard.git
+cd sales-insights-dashboard
+
