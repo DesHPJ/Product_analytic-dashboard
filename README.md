@@ -34,8 +34,25 @@ Data Processing → Records stored in Postgres, cached in Redis.
 
 Dashboard Visualization → Next.js frontend fetches data via Prisma and renders interactive sales dashboards.
 
+##🚀 Setup (Local)
 ```bash
 # Clone repo
 git clone https://github.com/yourusername/sales-insights-dashboard.git
 cd sales-insights-dashboard
+```
+## Backend:
+```bash
+# Configure Postgres & Redis in .env
+DATABASE_URL="postgresql://user:password@localhost:5432/salesdb"
+REDIS_URL="redis://localhost:6379"
 
+# Run Prisma migrations
+npx prisma migrate dev
+```
+##Frontend:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Visit → http://localhost:3000
